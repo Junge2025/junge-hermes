@@ -1,0 +1,68 @@
+# 军鸽云链数智 — SEO 标签验证
+# 检查: OpenGraph + JSON-LD + Canonical + Robots
+name: SEO Validate
+
+on:
+  push:
+    paths: ['**.html']
+  pull_request:
+    paths: ['**.html']
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Essential Meta Tags
+        run: |
+          missing=0
+          for f in index.html shangcheng.html junge-shuzhi.html fenzhan.html; do
+            [ ! -f "$f" ] && continue
+            echo "::group::$f"
+            for tag in 'og:title' 'og:description' 'og:image' 'twitter:card' 'canonical' 'name="description"' 'name="robots"'; do
+              if grep -q "$tag" "$f"; then
+                echo "  ✅ $tag"
+              else
+                echo "  ❌ MISSING: $tag"
+                missing=$((missing+1))
+              fi
+            done
+            echo "::endgroup::"
+          done
+          echo "total_missing=$missing" >> $GITHUB_OUTPUT
+          if [ $missing -gt 0 ]; then
+            echo "::error::$missing essential meta tags missing"
+          fi
+
+      - name: Validate JSON-LD
+        run: |
+          errors=0
+          for f in *.html; do
+            [ ! -f "$f" ] && continue
+            blocks=$(grep -c 'application/ld+json' "$f" 2>/dev/null || echo 0)
+            if [ "$blocks" -eq 0 ]; then
+              echo "  ⚠️  $f: no JSON-LD"
+            fi
+          done
+          # 主板页必须要有 JSON-LD
+          for f in index.html shangcheng.html junge-shuzhi.html fenzhan.html; do
+            if ! grep -q 'application/ld+json' "$f" 2>/dev/null; then
+              echo "::error::$f missing JSON-LD"
+              errors=$((errors+1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then exit 1; fi
+
+      - name: Validate Sitemap
+        run: |
+          if [ -f sitemap.xml ]; then
+            urls=$(grep -c '<loc>' sitemap.xml)
+            echo "sitemap.xml: $urls URLs"
+            if command -v xmllint &>/dev/null; then
+              xmllint --noout sitemap.xml && echo "✅ XML valid"
+            fi
+          else
+            echo "::warning::sitemap.xml not found"
+          fi
